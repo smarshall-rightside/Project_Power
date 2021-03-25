@@ -16,3 +16,13 @@ Top left shows Boost
 Top right shows max boost live, resets after 5 seconds 
 Mid bar shows boost percentage
 Graph shows positive boost pressure as solid, and negative pressure as hollow.
+
+Example:
+
+https://youtu.be/dPYfYAu3kfI
+
+Schematics: 
+
+![Project Power v2_bb](https://user-images.githubusercontent.com/73080506/112404168-bff93580-8d07-11eb-9f33-32fea28c94ab.jpg)
+
+[Project Power v2_schem.pdf](https://github.com/smarshall-rightside/Project_Power/files/6201334/Project.Power.v2_schem.pdf)
