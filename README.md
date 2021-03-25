@@ -23,6 +23,5 @@ https://youtu.be/dPYfYAu3kfI
 
 Schematics: 
 
-![Project Power v2_bb](https://user-images.githubusercontent.com/73080506/112404168-bff93580-8d07-11eb-9f33-32fea28c94ab.jpg)
-
-[Project Power v2_schem.pdf](https://github.com/smarshall-rightside/Project_Power/files/6201334/Project.Power.v2_schem.pdf)
+![IMG_1065](https://user-images.githubusercontent.com/73080506/112404251-eae38980-8d07-11eb-9469-86eb4615acd2.jpg)
+![IMG_1064](https://user-images.githubusercontent.com/73080506/112404257-ecad4d00-8d07-11eb-9431-136e3a493551.jpg)
