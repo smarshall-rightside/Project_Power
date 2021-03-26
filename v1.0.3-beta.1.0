@@ -1,6 +1,6 @@
 // Created by Steven Marshall
 // Created 23/03/2020
-// v1.0.1-beta.1.0
+// v1.0.3-beta.1.0
 // https://github.com/smarshall-rightside/Project_Power/
 // Licensed for non-commercial use ONLY
 // Do not remove this header
@@ -85,7 +85,7 @@ void loop(void) {
     if (boostPressure >= 3500)
     {
       u8g2.setFont(u8g2_font_fub11_tf);
-      u8g2.drawStr(45, 10, "MAX");
+      u8g2.drawStr(40, 10, "MAX");
     }
     else if (boostPressure < 3500)
     {
