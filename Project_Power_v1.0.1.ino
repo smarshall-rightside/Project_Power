@@ -1,6 +1,6 @@
 // Created by Steven Marshall
 // Created 23/03/2020
-// v1.0.1
+// v1.0.2
 // https://github.com/smarshall-rightside/Project_Power/
 // Licensed for non-commercial use ONLY
 // Do not remove this header
@@ -70,9 +70,17 @@ void loop(void) {
     u8g2.drawStr(0, 20, cstd);
 
     // Draw boost text
-    u8g2.setFont(u8g2_font_helvR08_tf);
-    u8g2.drawStr(45, 20, "BAR");
-
+    // If statment fixes Bug #1
+    if (boostPressure >=0)
+    {
+      u8g2.setFont(u8g2_font_helvR08_tf);
+      u8g2.drawStr(40, 20, "BOOST");
+    }
+    else if (boostPressure < 0)
+    {
+      u8g2.setFont(u8g2_font_helvR08_tf);
+      u8g2.drawStr(50, 20, "VAC");
+    }
     // Draw boost text
     if (boostPressure >= 3500)
     {
@@ -82,7 +90,7 @@ void loop(void) {
     else if (boostPressure < 3500)
     {
       u8g2.setFont(u8g2_font_helvR08_tf);
-      u8g2.drawStr(45, 10, "");
+      u8g2.drawStr(40, 10, "");
     }
 
     // Draw max pressure
