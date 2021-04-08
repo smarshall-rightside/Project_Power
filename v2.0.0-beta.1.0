@@ -5,12 +5,71 @@
 // Licensed for non-commercial use ONLY
 // Do not remove this header
 
+#define PID_ENGINE_LOAD 0x04
+#define PID_COOLANT_TEMP 0x05
+#define PID_SHORT_TERM_FUEL_TRIM_1 0x06
+#define PID_LONG_TERM_FUEL_TRIM_1 0x07
+#define PID_SHORT_TERM_FUEL_TRIM_2 0x08
+#define PID_LONG_TERM_FUEL_TRIM_2 0x09
+#define PID_FUEL_PRESSURE 0x0A
+#define PID_INTAKE_MAP 0x0B
+#define PID_ENGINE_RPM  0x0C
+#define PID_VEHICLE_SPEED 0x0D
+#define PID_TIMING_ADVANCE 0x0E
+#define PID_INTAKE_TEMP 0x0F
+#define PID_MAF_FLOW 0x10
+#define PID_THROTTLE 0x11
+#define PID_AUX_INPUT 0x1E
+#define PID_RUNTIME 0x1F
+#define PID_DISTANCE_WITH_MIL 0x21
+#define PID_COMMANDED_EGR 0x2C
+#define PID_EGR_ERROR 0x2D
+#define PID_COMMANDED_EVAPORATIVE_PURGE 0x2E
+#define PID_FUEL_LEVEL 0x2F
+#define PID_WARMS_UPS 0x30
+#define PID_DISTANCE 0x31
+#define PID_EVAP_SYS_VAPOR_PRESSURE 0x32
+#define PID_BAROMETRIC 0x33
+#define PID_CATALYST_TEMP_B1S1 0x3C
+#define PID_CATALYST_TEMP_B2S1 0x3D
+#define PID_CATALYST_TEMP_B1S2 0x3E
+#define PID_CATALYST_TEMP_B2S2 0x3F
+#define PID_CONTROL_MODULE_VOLTAGE 0x42
+#define PID_ABSOLUTE_ENGINE_LOAD 0x43
+#define PID_AIR_FUEL_EQUIV_RATIO 0x44
+#define PID_RELATIVE_THROTTLE_POS 0x45
+#define PID_AMBIENT_TEMP 0x46
+#define PID_ABSOLUTE_THROTTLE_POS_B 0x47
+#define PID_ABSOLUTE_THROTTLE_POS_C 0x48
+#define PID_ACC_PEDAL_POS_D 0x49
+#define PID_ACC_PEDAL_POS_E 0x4A
+#define PID_ACC_PEDAL_POS_F 0x4B
+#define PID_COMMANDED_THROTTLE_ACTUATOR 0x4C
+#define PID_TIME_WITH_MIL 0x4D
+#define PID_TIME_SINCE_CODES_CLEARED 0x4E
+#define PID_ETHANOL_FUEL 0x52
+#define PID_FUEL_RAIL_PRESSURE 0x59
+#define PID_HYBRID_BATTERY_PERCENTAGE 0x5B
+#define PID_ENGINE_OIL_TEMP 0x5C
+#define PID_FUEL_INJECTION_TIMING 0x5D
+#define PID_ENGINE_FUEL_RATE 0x5E
+#define PID_ENGINE_TORQUE_DEMANDED 0x61
+#define PID_ENGINE_TORQUE_PERCENTAGE 0x62
+#define PID_ENGINE_REF_TORQUE 0x63
+//----------------------------------------------
 
+#define CAN_ID_PID 0x7DF //OBD-II CAN frame ID
 
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <SPI.h>
+#include <ezButton.h>
 #include <Wire.h>
+#include <mcp_can.h>
+#include <Adafruit_BMP085.h>
+#define CAN0_INT 2                              // Set INT to pin 2  <--------- CHANGE if using different pin number
+MCP_CAN CAN0(53);                               // Set CS to pin 10 <--------- CHANGE if using different pin number
+ezButton button(7);
 
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 
@@ -18,6 +77,12 @@ unsigned long startMillis;
 unsigned long currentMillis;
 unsigned long time_passed;
 unsigned long lastReset;
+long unsigned int rxId;
+unsigned char len = 0;
+unsigned char rxBuf[8];
+char msgString[128];
+
+// Array to store serial string
 
 const unsigned long period = 25;
 
@@ -25,26 +90,62 @@ const int sensorHistoryLength = 128;
 int sensorHistory[sensorHistoryLength];
 int sensorHistoryPos = sensorHistoryLength - 1;
 int boostPressure;
-int boostMax = 2175; //was 0
+int boostMax = 0; //was 2175
 int BoostMaxTop = 0;
-int boostMin = -400;
+int boostMin = 0;
+int mapPressure  = 0;
 float inbar;
 float maxinbar;
+uint8_t oiltemp = 0;
+uint8_t coolanttemp = 0;
+uint8_t egt1temp = 0;
+uint8_t egt2temp = 0;
+uint8_t enginerpm = 0;
+
+
 
 int page = 0;
+Adafruit_BMP085 bmp;
+
 
 void setup(void) {
   Serial.begin(9600);
   u8g2.begin();
   startMillis = millis();
   time_passed = millis();
+  
+  // Initialize MCP2515 running at 8MHz with a baudrate of 500kb/s and the masks and filters disabled.
+  if (CAN0.begin(MCP_STDEXT, CAN_500KBPS, MCP_8MHZ) == CAN_OK) { //< -------- - CHANGE if using different board
+    Serial.println("MCP2515 Initialized Successfully!");
+  }
+  else {
+    Serial.println("Error Initializing MCP2515...");
+    while (1);
+  }
+  if (!bmp.begin()) {
+  Serial.println("Could not find a valid BMP085 sensor, check wiring!");
+  while (1) {}
+  }
+
+  //initialise mask and filter to allow only receipt of 0x7xx CAN IDs
+  CAN0.init_Mask(0, 0, 0x07000000);              // Init first mask...
+  CAN0.init_Mask(1, 0, 0x07000000);              // Init second mask...
+
+
+  for (uint8_t i = 0; i < 6; ++i) {
+    CAN0.init_Filt(i, 0, 0x07000000);           //Init filters
+  }
+
+  CAN0.setMode(MCP_NORMAL);                     // Set operation mode to normal so the MCP2515 sends acks to received data.
+
+  pinMode(CAN0_INT, INPUT);                    // Configuring pin for /INT input
 }
 
 
 void loop(void) {
-  if (Serial.available()) {
-    char c = Serial.read();
-    if (c == 'a')
+  button.loop();
+  
+  if (button.isPressed()) {
       page = (page + 1) % 5;
   }
 
@@ -74,26 +175,25 @@ void loop(void) {
       displayPage1();   //Your default page
     }
     else if (page == 1) {
-      u8g2.setFont(u8g2_font_helvR08_tf);
-      u8g2.drawStr(40, 20, "Page 2");
+      displayPage2();
     }
     else if (page == 2) {
-      u8g2.setFont(u8g2_font_helvR08_tf);
-      u8g2.drawStr(40, 20, "Page 3");
+      displayPage3();
     }
     else if (page == 3) {
-      u8g2.setFont(u8g2_font_helvR08_tf);
-      u8g2.drawStr(40, 20, "Page 4");
+      displayPage4();
     }
     else if (page == 4) {
-      u8g2.setFont(u8g2_font_helvR08_tf);
-      u8g2.drawStr(40, 20, "Page 5");
+      displayPage5();
     }
 
   } while ( u8g2.nextPage() );
 }
 
 void displayPage1() {
+
+
+
   // Draw current pressure
   u8g2.setFont(u8g2_font_fub20_tf);
 
@@ -101,12 +201,6 @@ void displayPage1() {
   if (boostPressure < 0 && boostPressure > -200)
   {
     boostPressure = 0;
-  }
-
-  if (analogRead(A0) == 0)
-  {
-    boostPressure = 0;
-    BoostMaxTop = 0;
   }
 
   // Change PSI to BAR
@@ -154,44 +248,131 @@ void displayPage1() {
   drawGraph(0, 32, 128, 31);
 }
 
-float normaliseSensorData(int m) {
-  /*
-    Scale the sensor reading into range
-    m = measurement to be scaled
-    rmin = minimum of the range of the measurement
-    rmax = maximum of the range of the measurement
-    tmin = minimum of the range of the desired target scaling
-    tmax = maximum of the range of the desired target scaling
-    normalisedValue = ((m − rmin) / (rmax − rmin)) * (tmax − tmin) + tmin
-    https://stats.stackexchange.com/a/281164
-  */
+void displayPage2() {
+  
+  currentMillis = millis();
+  if (currentMillis - startMillis >= period) {
+    sendPID(PID_COOLANT_TEMP);
+    receivePID(PID_COOLANT_TEMP);
+    startMillis = currentMillis;
+  }
+  
 
-  /*
-    Sensor voltage ranges from 0.5v to 4.5v, converted to analogRead values (0 min, 1023 max) that's 102 to 921. Times the voltage by 204.66
-    rmin = 102
-    rmax = 921
-    Sensor reads from 0 to 50psi
-    tmin = 0
-    tmax = 5000
-    normalisedValue = ((m − 102) / (921 − 102)) * (5000 − 0) + 0
-    normalisedValue = ((m − 102) / 819) * 5000
-    normalisedValue = (m − 102) / 0.1638
-  */
+  //sendPID(PID_ENGINE_OIL_TEMP);
+  //receivePID(PID_ENGINE_OIL_TEMP);
+  //oiltemp = 56; //Emulatiing CAN oil temp
 
-  return (m - 102) / 0.1638;
+
+  char cstm[4];
+  dtostrf((float)oiltemp, 1, 1, cstm);
+
+  char cstn[4];
+  dtostrf((float)coolanttemp, 1, 1, cstn);
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(50, 10, "Oil Temp");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(43, 25, cstm); //°C
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(78, 25, "°C"); 
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(30, 40, "Coolant Temp");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(40, 55, cstn); //°C
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(78, 55, "°C"); 
 }
 
-void readSensorData(void) {
-  float absolutePressure = normaliseSensorData(analogRead(A0));
+void displayPage3() {
+  currentMillis = millis();
+  if (currentMillis - startMillis >= period) {
+    sendPID(PID_ENGINE_RPM);
+    receivePID(PID_ENGINE_RPM);
+    startMillis = currentMillis;
+  }
+ 
+  char cstm[4];
+  dtostrf((float)enginerpm, 1, 1, cstm);
 
-  // Subtract 14.7 psi == pressure at sea level
-  // Additional 2.57psi subtracted as boost was showing 2.57 with engine off
-  boostPressure = absolutePressure - 855;//was 865
+  char cstn[4];
+  dtostrf((float)egt2temp, 1, 1, cstn);
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(50, 10, "RPM");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(43, 25, cstm); 
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(30, 40, "EGT 2 Temp");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(40, 55, "92.0"); //°C
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(78, 55, "°C"); 
+}
+
+void displayPage4() {
+currentMillis = millis();
+  if (currentMillis - startMillis >= period) {
+    sendPID(PID_CATALYST_TEMP_B1S1);
+    receivePID(PID_CATALYST_TEMP_B1S1);
+    startMillis = currentMillis;
+  }
+
+
+  char cstm[4];
+  dtostrf((float)egt1temp, 1, 1, cstm);
+
+  char cstn[4];
+  dtostrf((float)egt2temp, 1, 1, cstn);
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(50, 10, "EGT 1 Temp");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(43, 25, cstm); //°C
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(78, 25, "°C"); 
+  
+  u8g2.setFont(u8g2_font_helvR08_tf);
+  u8g2.drawStr(30, 40, "EGT 2 Temp");
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(40, 55, "0.0"); //°C
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawUTF8(78, 55, "°C"); 
+}
+
+void displayPage5() {
+  u8g2.setFont(u8g2_font_fub11_tf);
+  u8g2.drawStr(40, 20, "Page 5");
+}
+
+
+void readSensorData(void) {
+    
+  sendPID(PID_INTAKE_MAP);
+  receivePID(PID_INTAKE_MAP);
+
+  //mapPressure = 140; //Emulatiing CAN Pressure result in pascal
+
+  // Read Atmosthperic pressure with BMP180
+  int AbsaloutePressure;
+  AbsaloutePressure = bmp.readPressure() / 6895 ; //Pa into  psi
+  AbsaloutePressure = AbsaloutePressure * 100; //psi adding decimal points
+
+
+  // Read MAP Pressure
+  int mapinpsi; 
+  mapinpsi = mapPressure / 6.895; //Kpa into  psi
+  mapinpsi = mapinpsi * 100; //psi adding decimal points
+
+  //Get boost pressure from above values
+  boostPressure = mapinpsi - AbsaloutePressure;
+ 
 
   // Update max and min
   if (boostPressure > boostMax) boostMax = boostPressure;
   if (boostPressure < boostMin) boostMin = boostPressure;
-
+  
   // Log the history
   addSensorHistory(boostPressure);
 }
@@ -259,5 +440,76 @@ int mapValueToYPos(int val, int range, int y, int height) {
 void drawHorizontalDottedLine(int x, int y, int len) {
   for (int i = 0; i < len; i++) {
     if (!(i % 4)) u8g2.drawPixel(x + i, y);
+  }
+}
+
+void receivePID(unsigned char __pid)
+{
+  if (!digitalRead(CAN0_INT)) {                      // If CAN0_INT pin is low, read receive buffer
+    CAN0.readMsgBuf(&rxId, &len, rxBuf);      // Read data: len = data length, buf = data byte(s)
+
+    sprintf(msgString, "Standard ID: 0x%.3lX, DLC: %1d, Data: ", rxId, len);
+    Serial.print(msgString);
+
+    for (byte i = 0; i < len; i++) {
+      sprintf(msgString, " 0x%.2X", rxBuf[i]);
+      Serial.print(msgString);
+    }
+
+
+    switch (__pid) {
+      case PID_COOLANT_TEMP:
+        if (rxBuf[2] == PID_COOLANT_TEMP) {
+          uint8_t temp;
+          coolanttemp = rxBuf[3] - 40;
+        }
+        break;
+
+        
+        case PID_CATALYST_TEMP_B1S1:
+        if (rxBuf[2] == PID_CATALYST_TEMP_B1S1) {
+          egt1temp = ((rxBuf[3] * 256) + rxBuf[4]) / 10 - 40 ;
+          
+        }
+        break;
+
+      case PID_ENGINE_RPM:
+        if (rxBuf[2] == PID_ENGINE_RPM) {
+          enginerpm = ((rxBuf[3] * 256) + rxBuf[4]) / 4;
+        }
+        break;
+
+      case PID_INTAKE_MAP:
+        if (rxBuf[2] == PID_INTAKE_MAP) {
+          uint8_t pressure;
+          pressure = rxBuf[3];
+          mapPressure = pressure; //in kpasc
+          //Serial.print("MAP Pressure: ");
+          //Serial.print(mapPressure);
+          //Serial.println(" Kpa");
+        }
+        break;
+
+      case PID_ENGINE_OIL_TEMP:
+        if (rxBuf[2] == PID_ENGINE_OIL_TEMP) {
+          uint8_t temp;
+          oiltemp = rxBuf[3] - 40;
+        }
+        break;
+    }
+  }
+}
+
+void sendPID(unsigned char __pid)
+{
+  unsigned char tmp[8] = {0x02, 0x01, __pid, 0, 0, 0, 0, 0};
+
+  byte sndStat = CAN0.sendMsgBuf(CAN_ID_PID, 0, 8, tmp);
+
+  if (sndStat == CAN_OK) {
+  }
+  else {
+    Serial.println("Error Sending Message...");
+    delay(1000);
   }
 }
